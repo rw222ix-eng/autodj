@@ -16,6 +16,11 @@ dist/
 workdir/
 *.log
 
+# PyInstaller
+backend/build/
+backend/dist/
+backend/*.spec.bak
+
 # OS / editor
 .DS_Store
 Thumbs.db
