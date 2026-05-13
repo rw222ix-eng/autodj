@@ -69,6 +69,32 @@ def plan(
     diff = abs(a.bpm - b.bpm) / b.bpm
     beat_match = diff <= BPM_BEAT_MATCH_TOLERANCE
 
+    stretched = None
+    if beat_match and not np.isclose(a.bpm, b.bpm) and a_buffer is not None:
+        outro_slice = a_buffer[_samples(a_start_s):_samples(a_end_s)]
+        ratio = b.bpm / a.bpm  # >1 speeds up
+        mono = outro_slice.mean(axis=1) if outro_slice.ndim == 2 else outro_slice
+        stretched_mono = librosa.effects.time_stretch(mono.astype(np.float32), rate=ratio)
+        # Per spec §4.3 step 3: re-detect beats and trim to expected bars.
+        expected_beats = effective_bars * 4
+        try:
+            _, new_beat_frames = librosa.beat.beat_track(y=stretched_mono, sr=TARGET_SAMPLE_RATE)
+            new_beats = librosa.frames_to_time(new_beat_frames, sr=TARGET_SAMPLE_RATE)
+        except Exception:
+            new_beats = np.array([])
+        if len(new_beats) >= expected_beats:
+            trim_end_s = float(new_beats[expected_beats - 1]) + 60 / b.bpm
+            stretched_mono = stretched_mono[:_samples(trim_end_s)]
+        elif len(new_beats) > 0:
+            new_effective_bars = max(1, len(new_beats) // 4)
+            if new_effective_bars < effective_bars:
+                effective_bars = new_effective_bars
+                warning = "bars_reduced"
+                trim_end_s = float(new_beats[effective_bars * 4 - 1]) + 60 / b.bpm
+                stretched_mono = stretched_mono[:_samples(trim_end_s)]
+        stretched = np.stack([stretched_mono, stretched_mono], axis=1).astype(np.float32)
+        a_end_s = a_start_s + len(stretched_mono) / TARGET_SAMPLE_RATE
+
     return AlignmentPlan(
         a_start_sample=_samples(a_start_s),
         a_end_sample=_samples(a_end_s),
@@ -76,5 +102,6 @@ def plan(
         b_end_sample=_samples(b_end_s),
         beat_match=beat_match,
         effective_bars=effective_bars,
+        stretched_outro=stretched,
         warning=warning,
     )
