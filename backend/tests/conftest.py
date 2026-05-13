@@ -51,6 +51,15 @@ def click_174_wav() -> Path:
     return path
 
 
+@pytest.fixture(scope="session")
+def click_120_short_wav() -> Path:
+    """45 s click - below the 60 s threshold to trigger `short_track` warning."""
+    path = FIXTURES / "click_120_short.wav"
+    if not path.exists():
+        sf.write(path, _click_track(120, 45), SR)
+    return path
+
+
 import subprocess
 
 
