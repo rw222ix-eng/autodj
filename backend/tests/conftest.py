@@ -49,3 +49,31 @@ def click_174_wav() -> Path:
     if not path.exists():
         sf.write(path, _click_track(174, 30), SR)
     return path
+
+
+import subprocess
+
+
+def _convert(src: Path, dst: Path) -> Path:
+    if dst.exists():
+        return dst
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(src), str(dst)],
+        check=True, capture_output=True,
+    )
+    return dst
+
+
+@pytest.fixture(scope="session")
+def click_120_mp3(click_120_wav) -> Path:
+    return _convert(click_120_wav, FIXTURES / "click_120.mp3")
+
+
+@pytest.fixture(scope="session")
+def click_120_flac(click_120_wav) -> Path:
+    return _convert(click_120_wav, FIXTURES / "click_120.flac")
+
+
+@pytest.fixture(scope="session")
+def click_120_m4a(click_120_wav) -> Path:
+    return _convert(click_120_wav, FIXTURES / "click_120.m4a")
