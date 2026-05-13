@@ -33,6 +33,77 @@ def _equal_power(n: int) -> tuple[np.ndarray, np.ndarray]:
     return fade_out, fade_in
 
 
+def _swept_filter(x: np.ndarray, sr: int, btype: str,
+                   start_hz: float, end_hz: float) -> np.ndarray:
+    """Time-varying lowpass/highpass via cascaded one-pole IIR, sample-by-sample.
+
+    Sweeps cutoff exponentially from start_hz to end_hz over len(x) samples.
+    Four-pole cascade for ~24 dB/oct rolloff.
+    """
+    n = len(x)
+    if n == 0:
+        return x.astype(np.float32)
+    out = np.empty_like(x, dtype=np.float32)
+    cutoffs = np.exp(np.linspace(np.log(max(20.0, start_hz)),
+                                  np.log(max(20.0, end_hz)), n))
+    alphas = np.exp(-2 * np.pi * cutoffs / sr).astype(np.float32)
+    poles = 4
+    n_ch = x.shape[1]
+    state = np.zeros((poles, n_ch), dtype=np.float32)
+    if btype == "low":
+        # cascaded one-pole lowpass: y[n] = (1-a)*x[n] + a*y[n-1]
+        for i in range(n):
+            a = alphas[i]
+            b = np.float32(1.0) - a
+            sig = x[i].astype(np.float32)
+            for p in range(poles):
+                state[p] = b * sig + a * state[p]
+                sig = state[p]
+            out[i] = sig
+    elif btype == "high":
+        # highpass = input - lowpass (single pole), cascaded
+        for i in range(n):
+            a = alphas[i]
+            b = np.float32(1.0) - a
+            sig = x[i].astype(np.float32)
+            for p in range(poles):
+                state[p] = b * sig + a * state[p]
+                sig = sig - state[p]
+            out[i] = sig
+    else:
+        raise ValueError(f"unknown filter btype: {btype}")
+    return out
+
+
+def _apply_lowpass_sweep(x: np.ndarray, sr: int = 44_100) -> np.ndarray:
+    # Sweep lowpass from ~8 kHz down to ~80 Hz over the region (log scale)
+    return _swept_filter(x, sr, "low", 8000.0, 80.0)
+
+
+def _apply_highpass_sweep(x: np.ndarray, sr: int = 44_100) -> np.ndarray:
+    # Sweep highpass from ~40 Hz up to ~4 kHz over the region (log scale)
+    return _swept_filter(x, sr, "high", 40.0, 4000.0)
+
+
+def _apply_echo_tail(x: np.ndarray, bpm: float, sr: int = 44_100,
+                     feedback: float = 0.6) -> np.ndarray:
+    """Add eighth-note delays with feedback, ramping in over the region."""
+    delay_samples = int(sr * 60 / bpm / 2)  # eighth note
+    if delay_samples <= 0 or delay_samples >= len(x):
+        return x.astype(np.float32)
+    out = x.astype(np.float32).copy()
+    ramp = np.linspace(0.0, 1.0, len(x), dtype=np.float32)[:, None]
+    delayed = np.zeros_like(out)
+    for offset in range(1, 8):
+        gain = feedback ** offset
+        shifted = delay_samples * offset
+        if shifted >= len(out):
+            break
+        delayed[shifted:] += x[:-shifted].astype(np.float32) * gain
+    out = out + delayed * ramp
+    return out.astype(np.float32)
+
+
 def build(
     a_samples: np.ndarray,
     b_samples: np.ndarray,
@@ -55,6 +126,12 @@ def build(
     if options.type == "crossfade":
         fo, fi = _equal_power(n)
         mixed_region = a_outro * fo[:, None] + b_intro * fi[:, None]
+        if options.effect == "lowpass_sweep":
+            mixed_region = _apply_lowpass_sweep(mixed_region)
+        elif options.effect == "highpass_sweep":
+            mixed_region = _apply_highpass_sweep(mixed_region)
+        elif options.effect == "echo_tail":
+            mixed_region = _apply_echo_tail(mixed_region, bpm=bpm_a or 120.0)
     elif options.type == "cut":
         mixed_region = b_intro
     else:
