@@ -113,11 +113,12 @@ async def mix_endpoint(req: MixRequest):
     job = JOBS.get(req.job_id)
     if not job:
         raise HTTPException(404, detail="unknown job")
+    from dataclasses import replace
     feat_a = job["feat_a"]; feat_b = job["feat_b"]
     if req.manual_bpm_a is not None:
-        feat_a.bpm = req.manual_bpm_a
+        feat_a = replace(feat_a, bpm=req.manual_bpm_a)
     if req.manual_bpm_b is not None:
-        feat_b.bpm = req.manual_bpm_b
+        feat_b = replace(feat_b, bpm=req.manual_bpm_b)
 
     alignment = align_plan(feat_a, feat_b, bars=req.bars,
                            a_buffer=job["buf_a"].samples)
