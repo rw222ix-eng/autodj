@@ -216,13 +216,14 @@ def build(
     bridge = _load_bridge(options.bridge)
     if len(bridge) > 0:
         bridge_len = len(bridge)
-        a_tail_start = plan.a_end_sample
-        a_tail_end = min(a_tail_start + bridge_len, len(a_samples))
-        underbed = a_samples[a_tail_start:a_tail_end]
+        # Underbed = A's outro continuation, starting at a_start_sample.
+        # The bridge plays as an overlay on top of the start of A's outro;
+        # the crossfade then begins from a_start_sample as usual.
+        underbed_end = min(plan.a_start_sample + bridge_len, len(a_samples))
+        underbed = a_samples[plan.a_start_sample:underbed_end]
         if len(underbed) < bridge_len:
-            need = bridge_len - len(underbed)
-            fill = a_outro[-need:] if len(a_outro) >= need else np.zeros((need, 2), dtype=np.float32)
-            underbed = np.concatenate([underbed, fill], axis=0)
+            pad = np.zeros((bridge_len - len(underbed), 2), dtype=np.float32)
+            underbed = np.concatenate([underbed, pad], axis=0)
         underbed = underbed[:bridge_len]
         underbed_gain = 10 ** (-6 / 20)
         bridge_region = bridge + underbed * underbed_gain
