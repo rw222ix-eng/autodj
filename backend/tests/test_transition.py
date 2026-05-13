@@ -67,3 +67,25 @@ def test_echo_tail_produces_repeats(click_120_wav):
     region_len = p.a_end_sample - p.a_start_sample
     tail = slice(p.a_start_sample + region_len // 2, p.a_end_sample)
     assert np.sum(echoed[tail] ** 2) > np.sum(plain[tail] ** 2) * 1.05
+
+
+def test_reverb_wash_adds_energy(click_120_wav):
+    buf = load(click_120_wav)
+    a = analyze(buf); b = analyze(buf)
+    p = plan(a, b, bars=4, a_buffer=buf.samples)
+    plain = build(buf.samples, buf.samples, p,
+                  TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
+    reverbed = build(buf.samples, buf.samples, p,
+                     TransitionOptions(type="crossfade", bars=4, effect="reverb_wash"), bpm_a=a.bpm)
+    region = slice(p.a_start_sample, p.a_end_sample)
+    assert np.sum(reverbed[region] ** 2) > np.sum(plain[region] ** 2) * 1.05
+
+
+def test_backspin_overrides_last_bar(click_120_wav):
+    buf = load(click_120_wav)
+    a = analyze(buf); b = analyze(buf)
+    p = plan(a, b, bars=4, a_buffer=buf.samples)
+    out = build(buf.samples, buf.samples, p,
+                TransitionOptions(type="crossfade", bars=4, effect="backspin"), bpm_a=a.bpm)
+    assert out.shape[1] == 2
+    assert float(np.max(np.abs(out))) <= 10 ** (-0.5 / 20) + 0.01

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 import numpy as np
+from scipy.signal import lfilter
 
 from .align import AlignmentPlan
 from .config import OUTPUT_PEAK_DBFS
@@ -104,6 +105,58 @@ def _apply_echo_tail(x: np.ndarray, bpm: float, sr: int = 44_100,
     return out.astype(np.float32)
 
 
+def _comb_filter(x_mono: np.ndarray, delay: int, feedback: float) -> np.ndarray:
+    b = np.zeros(delay + 1, dtype=np.float32); b[0] = 1.0
+    a = np.zeros(delay + 1, dtype=np.float32); a[0] = 1.0; a[delay] = -feedback
+    return lfilter(b, a, x_mono).astype(np.float32)
+
+
+def _allpass_filter(x_mono: np.ndarray, delay: int, feedback: float = 0.5) -> np.ndarray:
+    b = np.zeros(delay + 1, dtype=np.float32); b[0] = -feedback; b[delay] = 1.0
+    a = np.zeros(delay + 1, dtype=np.float32); a[0] = 1.0; a[delay] = -feedback
+    return lfilter(b, a, x_mono).astype(np.float32)
+
+
+def _apply_reverb_wash(x: np.ndarray, sr: int = 44_100) -> np.ndarray:
+    combs = [1116, 1188, 1277, 1356]
+    allpasses = [556, 441]
+    wet = np.zeros_like(x)
+    for ch in range(x.shape[1]):
+        signal = x[:, ch]
+        ch_wet = np.zeros_like(signal)
+        for d in combs:
+            ch_wet += _comb_filter(signal, d, feedback=0.7)
+        ch_wet /= len(combs)
+        for d in allpasses:
+            ch_wet = _allpass_filter(ch_wet, d, feedback=0.5)
+        wet[:, ch] = ch_wet
+    ramp = np.linspace(0.0, 0.6, len(x), dtype=np.float32)[:, None]
+    return (x + wet * ramp).astype(np.float32)
+
+
+def _apply_backspin(
+    x: np.ndarray, fade_out: np.ndarray, bpm: float, bars: int, sr: int = 44_100
+) -> tuple[np.ndarray, np.ndarray]:
+    bar_samples = int(sr * 60 / bpm * 4)
+    n = len(x)
+    if bar_samples >= n or bar_samples < 2:
+        return x, fade_out
+    cut = n - bar_samples
+    source = x[cut - bar_samples:cut][::-1]
+    speed_ramp = np.linspace(1.0, 0.5, bar_samples, dtype=np.float32)
+    playhead = np.cumsum(speed_ramp) - speed_ramp[0]
+    playhead = playhead * ((bar_samples - 1) / playhead[-1])
+    idx = np.arange(bar_samples, dtype=np.float32)
+    played = np.empty_like(source)
+    played[:, 0] = np.interp(playhead, idx, source[:, 0])
+    played[:, 1] = np.interp(playhead, idx, source[:, 1])
+    out = x.copy()
+    out[cut:cut + bar_samples] = played
+    env = fade_out.copy()
+    env[cut:] = 10 ** (-3 / 20)
+    return out, env
+
+
 def build(
     a_samples: np.ndarray,
     b_samples: np.ndarray,
@@ -125,13 +178,19 @@ def build(
 
     if options.type == "crossfade":
         fo, fi = _equal_power(n)
-        mixed_region = a_outro * fo[:, None] + b_intro * fi[:, None]
-        if options.effect == "lowpass_sweep":
-            mixed_region = _apply_lowpass_sweep(mixed_region)
-        elif options.effect == "highpass_sweep":
-            mixed_region = _apply_highpass_sweep(mixed_region)
-        elif options.effect == "echo_tail":
-            mixed_region = _apply_echo_tail(mixed_region, bpm=bpm_a or 120.0)
+        if options.effect == "backspin":
+            effected_a, fo = _apply_backspin(a_outro, fo, bpm=bpm_a or 120.0, bars=options.bars)
+            mixed_region = effected_a * fo[:, None] + b_intro * fi[:, None]
+        else:
+            mixed_region = a_outro * fo[:, None] + b_intro * fi[:, None]
+            if options.effect == "lowpass_sweep":
+                mixed_region = _apply_lowpass_sweep(mixed_region)
+            elif options.effect == "highpass_sweep":
+                mixed_region = _apply_highpass_sweep(mixed_region)
+            elif options.effect == "echo_tail":
+                mixed_region = _apply_echo_tail(mixed_region, bpm=bpm_a or 120.0)
+            elif options.effect == "reverb_wash":
+                mixed_region = _apply_reverb_wash(mixed_region)
     elif options.type == "cut":
         mixed_region = b_intro
     else:
