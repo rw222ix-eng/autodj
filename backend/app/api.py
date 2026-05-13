@@ -74,3 +74,89 @@ async def analyze_endpoint(file_a: UploadFile = File(...), file_b: UploadFile = 
         "b": _feature_summary(feat_b),
         "warnings": warnings,
     }
+
+
+from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from .align import plan as align_plan
+from .transition import build, TransitionOptions, BridgeSampleMissing
+from .render import write as render_write
+
+
+class MixRequest(BaseModel):
+    job_id: str
+    type: str = "crossfade"
+    bars: int = 16
+    effect: str = "none"
+    bridge: str = "none"
+    manual_bpm_a: float | None = None
+    manual_bpm_b: float | None = None
+
+
+@app.post("/mix")
+async def mix_endpoint(req: MixRequest):
+    job = JOBS.get(req.job_id)
+    if not job:
+        raise HTTPException(404, detail="unknown job")
+    feat_a = job["feat_a"]; feat_b = job["feat_b"]
+    if req.manual_bpm_a is not None:
+        feat_a.bpm = req.manual_bpm_a
+    if req.manual_bpm_b is not None:
+        feat_b.bpm = req.manual_bpm_b
+
+    alignment = align_plan(feat_a, feat_b, bars=req.bars,
+                           a_buffer=job["buf_a"].samples)
+
+    if req.type == "cut" and not alignment.beat_match:
+        raise HTTPException(422, detail="cut_requires_beat_match")
+
+    options = TransitionOptions(type=req.type, bars=alignment.effective_bars,
+                                effect=req.effect, bridge=req.bridge)
+    try:
+        mixed = build(job["buf_a"].samples, job["buf_b"].samples,
+                      alignment, options, bpm_a=feat_a.bpm)
+    except BridgeSampleMissing as e:
+        raise HTTPException(500, detail=f"bridge_sample_missing: {e}")
+
+    metadata = {
+        "bpm_a": feat_a.bpm, "bpm_b": feat_b.bpm,
+        "key_a": feat_a.key, "key_b": feat_b.key,
+        "transition_start_s": alignment.a_start_sample / 44_100,
+        "transition_end_s": alignment.a_end_sample / 44_100,
+        "bars": alignment.effective_bars,
+        "type": req.type, "effect": req.effect, "bridge": req.bridge,
+        "beat_match": alignment.beat_match,
+        "scale_a": job["buf_a"].scale_applied,
+        "scale_b": job["buf_b"].scale_applied,
+    }
+    paths = render_write(mixed, job["dir"], metadata)
+    job["paths"] = paths
+
+    return {
+        "status": "ok",
+        "preview_url": f"/preview/{req.job_id}",
+        "download_wav_url": f"/download/{req.job_id}.wav",
+        "download_mp3_url": f"/download/{req.job_id}.mp3",
+        "beat_match": alignment.beat_match,
+        "effective_bars": alignment.effective_bars,
+        "warning": alignment.warning,
+    }
+
+
+@app.get("/download/{job_id}.{ext}")
+async def download_endpoint(job_id: str, ext: str):
+    job = JOBS.get(job_id)
+    if not job or "paths" not in job:
+        raise HTTPException(404)
+    if ext not in {"wav", "mp3"}:
+        raise HTTPException(404)
+    media = "audio/wav" if ext == "wav" else "audio/mpeg"
+    return FileResponse(job["paths"][ext], media_type=media, filename=f"mix.{ext}")
+
+
+@app.get("/preview/{job_id}")
+async def preview_endpoint(job_id: str):
+    job = JOBS.get(job_id)
+    if not job or "paths" not in job:
+        raise HTTPException(404)
+    return FileResponse(job["paths"]["wav"], media_type="audio/wav")
