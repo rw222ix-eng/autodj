@@ -1,7 +1,6 @@
 import json
 from app.audio_io import load
 from app.render import write
-from app.config import WORKDIR
 
 
 def test_render_writes_all_three_outputs(tmp_path, click_120_wav):

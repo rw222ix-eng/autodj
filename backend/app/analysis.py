@@ -4,7 +4,6 @@ import librosa
 from scipy.signal import find_peaks
 
 from .audio_io import AudioBuffer
-from .config import TARGET_SAMPLE_RATE
 
 
 class InsufficientContent(Exception):
