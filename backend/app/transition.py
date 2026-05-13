@@ -1,10 +1,16 @@
 from dataclasses import dataclass
 from typing import Literal
 import numpy as np
+from pathlib import Path
+import soundfile as sf
 from scipy.signal import lfilter
 
 from .align import AlignmentPlan
-from .config import OUTPUT_PEAK_DBFS
+from .config import OUTPUT_PEAK_DBFS, SAMPLES_DIR
+
+
+class BridgeSampleMissing(Exception):
+    pass
 
 TransitionType = Literal["crossfade", "cut"]
 EffectType = Literal["none", "lowpass_sweep", "highpass_sweep", "echo_tail", "reverb_wash", "backspin"]
@@ -105,6 +111,18 @@ def _apply_echo_tail(x: np.ndarray, bpm: float, sr: int = 44_100,
     return out.astype(np.float32)
 
 
+def _load_bridge(name: str) -> np.ndarray:
+    if name == "none":
+        return np.zeros((0, 2), dtype=np.float32)
+    path = Path(SAMPLES_DIR) / f"{name}.wav"
+    if not path.exists():
+        raise BridgeSampleMissing(str(path))
+    data, _ = sf.read(str(path), dtype="float32", always_2d=True)
+    if data.shape[1] == 1:
+        data = np.repeat(data, 2, axis=1)
+    return data.astype(np.float32)
+
+
 def _comb_filter(x_mono: np.ndarray, delay: int, feedback: float) -> np.ndarray:
     b = np.zeros(delay + 1, dtype=np.float32); b[0] = 1.0
     a = np.zeros(delay + 1, dtype=np.float32); a[0] = 1.0; a[delay] = -feedback
@@ -196,5 +214,20 @@ def build(
     else:
         raise ValueError(f"unknown transition type: {options.type}")
 
-    full = np.concatenate([pre_a, mixed_region, post_b], axis=0).astype(np.float32)
+    bridge = _load_bridge(options.bridge)
+    if len(bridge) > 0:
+        bridge_len = len(bridge)
+        a_tail_start = plan.a_end_sample
+        a_tail_end = min(a_tail_start + bridge_len, len(a_samples))
+        underbed = a_samples[a_tail_start:a_tail_end]
+        if len(underbed) < bridge_len:
+            need = bridge_len - len(underbed)
+            fill = a_outro[-need:] if len(a_outro) >= need else np.zeros((need, 2), dtype=np.float32)
+            underbed = np.concatenate([underbed, fill], axis=0)
+        underbed = underbed[:bridge_len]
+        underbed_gain = 10 ** (-6 / 20)
+        bridge_region = bridge + underbed * underbed_gain
+        full = np.concatenate([pre_a, bridge_region, mixed_region, post_b], axis=0).astype(np.float32)
+    else:
+        full = np.concatenate([pre_a, mixed_region, post_b], axis=0).astype(np.float32)
     return _peak_normalize(full, OUTPUT_PEAK_DBFS)
