@@ -36,3 +36,26 @@ def test_far_bpm_skips_stretch(click_90_wav, click_174_wav):
     p = plan(a, b, bars=4, a_buffer=buf_a.samples)
     assert p.beat_match is False
     assert p.stretched_outro is None
+
+
+import numpy as np
+from app.analysis import TrackFeatures
+
+
+def test_short_outro_shrinks_bars():
+    bpm = 120
+    sr = 44_100
+    duration = 5.0
+    beats = np.arange(0, duration, 60 / bpm)
+    downbeats = beats[::4]
+    a = TrackFeatures(
+        bpm=bpm, bpm_confidence=0.9,
+        beat_times=beats, downbeats=downbeats,
+        rms_envelope=np.ones(50, dtype=np.float32),
+        intro_window=(0.0, 1.0), outro_window=(0.0, duration),
+        duration_s=duration,
+    )
+    b = a
+    p = plan(a, b, bars=4)
+    assert p.effective_bars < 4
+    assert p.warning == "bars_reduced"
