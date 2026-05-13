@@ -4,14 +4,27 @@ import sys
 import os
 import threading
 import webbrowser
+from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .audio_io import load, UnsupportedFormat
 from .analysis import analyze, InsufficientContent
 from .config import WORKDIR, MAX_INPUT_DURATION_S
+from .align import plan as align_plan
+from .transition import (
+    build,
+    TransitionOptions,
+    BridgeSampleMissing,
+    TransitionType,
+    EffectType,
+    BridgeType,
+)
+from .render import write as render_write
 
 app = FastAPI(title="AutoDJ")
 app.add_middleware(
@@ -38,8 +51,6 @@ def _open_browser_when_ready():
 
 
 _open_browser_when_ready()
-
-from datetime import datetime, timedelta
 
 
 @app.on_event("startup")
@@ -81,7 +92,8 @@ async def analyze_endpoint(file_a: UploadFile = File(...), file_b: UploadFile = 
     a_path = _save_upload(file_a, job_dir / f"a_{file_a.filename}")
     b_path = _save_upload(file_b, job_dir / f"b_{file_b.filename}")
     try:
-        buf_a = load(a_path); buf_b = load(b_path)
+        buf_a = load(a_path)
+        buf_b = load(b_path)
     except UnsupportedFormat as e:
         raise HTTPException(415, detail=str(e))
 
@@ -91,7 +103,8 @@ async def analyze_endpoint(file_a: UploadFile = File(...), file_b: UploadFile = 
         raise HTTPException(413, detail="file_too_long: b")
 
     try:
-        feat_a = analyze(buf_a); feat_b = analyze(buf_b)
+        feat_a = analyze(buf_a)
+        feat_b = analyze(buf_b)
     except InsufficientContent as e:
         raise HTTPException(422, detail=f"insufficient_content: {e}")
 
@@ -114,19 +127,12 @@ async def analyze_endpoint(file_a: UploadFile = File(...), file_b: UploadFile = 
     }
 
 
-from pydantic import BaseModel
-from fastapi.responses import FileResponse
-from .align import plan as align_plan
-from .transition import build, TransitionOptions, BridgeSampleMissing
-from .render import write as render_write
-
-
 class MixRequest(BaseModel):
     job_id: str
-    type: str = "crossfade"
+    type: TransitionType = "crossfade"
     bars: int = 16
-    effect: str = "none"
-    bridge: str = "none"
+    effect: EffectType = "none"
+    bridge: BridgeType = "none"
     manual_bpm_a: float | None = None
     manual_bpm_b: float | None = None
 
@@ -137,7 +143,8 @@ async def mix_endpoint(req: MixRequest):
     if not job:
         raise HTTPException(404, detail="unknown job")
     from dataclasses import replace
-    feat_a = job["feat_a"]; feat_b = job["feat_b"]
+    feat_a = job["feat_a"]
+    feat_b = job["feat_b"]
     if req.manual_bpm_a is not None:
         feat_a = replace(feat_a, bpm=req.manual_bpm_a)
     if req.manual_bpm_b is not None:
@@ -204,7 +211,7 @@ async def preview_endpoint(job_id: str):
 def _frontend_dist_path() -> Path | None:
     # When packaged by PyInstaller, _MEIPASS is the extraction dir.
     if getattr(sys, "frozen", False):
-        meipass = Path(sys._MEIPASS)
+        meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
         candidate = meipass / "frontend_dist"
         if candidate.exists():
             return candidate

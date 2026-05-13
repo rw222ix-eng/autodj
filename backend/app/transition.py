@@ -124,14 +124,21 @@ def _load_bridge(name: str) -> np.ndarray:
 
 
 def _comb_filter(x_mono: np.ndarray, delay: int, feedback: float) -> np.ndarray:
-    b = np.zeros(delay + 1, dtype=np.float32); b[0] = 1.0
-    a = np.zeros(delay + 1, dtype=np.float32); a[0] = 1.0; a[delay] = -feedback
+    b = np.zeros(delay + 1, dtype=np.float32)
+    b[0] = 1.0
+    a = np.zeros(delay + 1, dtype=np.float32)
+    a[0] = 1.0
+    a[delay] = -feedback
     return lfilter(b, a, x_mono).astype(np.float32)
 
 
 def _allpass_filter(x_mono: np.ndarray, delay: int, feedback: float = 0.5) -> np.ndarray:
-    b = np.zeros(delay + 1, dtype=np.float32); b[0] = -feedback; b[delay] = 1.0
-    a = np.zeros(delay + 1, dtype=np.float32); a[0] = 1.0; a[delay] = -feedback
+    b = np.zeros(delay + 1, dtype=np.float32)
+    b[0] = -feedback
+    b[delay] = 1.0
+    a = np.zeros(delay + 1, dtype=np.float32)
+    a[0] = 1.0
+    a[delay] = -feedback
     return lfilter(b, a, x_mono).astype(np.float32)
 
 

@@ -1,9 +1,12 @@
 import numpy as np
+import pytest
+import soundfile as sf
+
 from app.audio_io import load
 from app.analysis import analyze
 from app.align import plan
-from app.transition import build, TransitionOptions
-from app.config import OUTPUT_PEAK_DBFS
+from app.transition import build, TransitionOptions, BridgeSampleMissing
+from app.config import OUTPUT_PEAK_DBFS, SAMPLES_DIR
 
 
 def _peak_dbfs(x: np.ndarray) -> float:
@@ -29,7 +32,8 @@ def test_crossfade_default(click_120_wav):
 
 def test_lowpass_sweep_attenuates_highs(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     # Use silence as B so the mixed region IS A * fo (no B contamination).
     silent_b = np.zeros_like(buf.samples)
@@ -45,7 +49,8 @@ def test_lowpass_sweep_attenuates_highs(click_120_wav):
 
 def test_highpass_sweep_attenuates_lows(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     silent_b = np.zeros_like(buf.samples)
     plain = build(buf.samples, silent_b, p,
@@ -60,7 +65,8 @@ def test_highpass_sweep_attenuates_lows(click_120_wav):
 
 def test_echo_tail_produces_repeats(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     silent_b = np.zeros_like(buf.samples)
     plain = build(buf.samples, silent_b, p,
@@ -74,7 +80,8 @@ def test_echo_tail_produces_repeats(click_120_wav):
 
 def test_reverb_wash_adds_energy(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     silent_b = np.zeros_like(buf.samples)
     plain = build(buf.samples, silent_b, p,
@@ -87,7 +94,8 @@ def test_reverb_wash_adds_energy(click_120_wav):
 
 def test_backspin_overrides_last_bar(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     out = build(buf.samples, buf.samples, p,
                 TransitionOptions(type="crossfade", bars=4, effect="backspin"), bpm_a=a.bpm)
@@ -95,14 +103,10 @@ def test_backspin_overrides_last_bar(click_120_wav):
     assert float(np.max(np.abs(out))) <= 10 ** (-0.5 / 20) + 0.01
 
 
-from app.config import SAMPLES_DIR
-import soundfile as sf
-import pytest
-
-
 def test_bridge_inserted_before_crossfade(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     out_no = build(buf.samples, buf.samples, p,
                    TransitionOptions(type="crossfade", bars=4, effect="none", bridge="none"),
@@ -117,7 +121,8 @@ def test_bridge_inserted_before_crossfade(click_120_wav):
 
 def test_bridge_seamless_to_crossfade(click_120_wav):
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     out = build(buf.samples, buf.samples, p,
                 TransitionOptions(type="crossfade", bars=4, effect="none", bridge="drumroll"),
@@ -132,9 +137,9 @@ def test_missing_bridge_raises(tmp_path, click_120_wav, monkeypatch):
     from app import transition as t
     monkeypatch.setattr(t, "SAMPLES_DIR", tmp_path)
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
-    from app.transition import BridgeSampleMissing
     with pytest.raises(BridgeSampleMissing):
         build(buf.samples, buf.samples, p,
               TransitionOptions(type="crossfade", bars=4, effect="none", bridge="drumroll"),
@@ -144,7 +149,8 @@ def test_missing_bridge_raises(tmp_path, click_120_wav, monkeypatch):
 def test_beat_grid_alignment_within_15ms(click_120_wav):
     import librosa
     buf = load(click_120_wav)
-    a = analyze(buf); b = analyze(buf)
+    a = analyze(buf)
+    b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
     out = build(buf.samples, buf.samples, p,
                 TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)

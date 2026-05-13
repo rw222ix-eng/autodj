@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -58,9 +59,6 @@ def click_120_short_wav() -> Path:
     if not path.exists():
         sf.write(path, _click_track(120, 45), SR)
     return path
-
-
-import subprocess
 
 
 def _convert(src: Path, dst: Path) -> Path:

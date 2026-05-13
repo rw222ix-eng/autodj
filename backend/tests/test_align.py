@@ -1,5 +1,7 @@
+import numpy as np
+
 from app.audio_io import load
-from app.analysis import analyze
+from app.analysis import analyze, TrackFeatures
 from app.align import plan
 
 
@@ -41,13 +43,8 @@ def test_far_bpm_skips_stretch(click_90_wav, click_174_wav):
     assert p.stretched_outro is None
 
 
-import numpy as np
-from app.analysis import TrackFeatures
-
-
 def test_short_outro_shrinks_bars():
     bpm = 120
-    sr = 44_100
     duration = 5.0
     beats = np.arange(0, duration, 60 / bpm)
     downbeats = beats[::4]

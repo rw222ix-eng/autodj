@@ -7,7 +7,7 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 
 def _samples_dir() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "samples"
+        return Path(sys._MEIPASS) / "samples"  # type: ignore[attr-defined]
     return PROJECT_ROOT / "samples"
 
 
