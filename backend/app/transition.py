@@ -196,19 +196,18 @@ def build(
 
     if options.type == "crossfade":
         fo, fi = _equal_power(n)
-        if options.effect == "backspin":
+        effected_a = a_outro
+        if options.effect == "lowpass_sweep":
+            effected_a = _apply_lowpass_sweep(a_outro)
+        elif options.effect == "highpass_sweep":
+            effected_a = _apply_highpass_sweep(a_outro)
+        elif options.effect == "echo_tail":
+            effected_a = _apply_echo_tail(a_outro, bpm=bpm_a or 120.0)
+        elif options.effect == "reverb_wash":
+            effected_a = _apply_reverb_wash(a_outro)
+        elif options.effect == "backspin":
             effected_a, fo = _apply_backspin(a_outro, fo, bpm=bpm_a or 120.0, bars=options.bars)
-            mixed_region = effected_a * fo[:, None] + b_intro * fi[:, None]
-        else:
-            mixed_region = a_outro * fo[:, None] + b_intro * fi[:, None]
-            if options.effect == "lowpass_sweep":
-                mixed_region = _apply_lowpass_sweep(mixed_region)
-            elif options.effect == "highpass_sweep":
-                mixed_region = _apply_highpass_sweep(mixed_region)
-            elif options.effect == "echo_tail":
-                mixed_region = _apply_echo_tail(mixed_region, bpm=bpm_a or 120.0)
-            elif options.effect == "reverb_wash":
-                mixed_region = _apply_reverb_wash(mixed_region)
+        mixed_region = effected_a * fo[:, None] + b_intro * fi[:, None]
     elif options.type == "cut":
         mixed_region = b_intro
     else:

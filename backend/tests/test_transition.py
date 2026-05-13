@@ -31,14 +31,15 @@ def test_lowpass_sweep_attenuates_highs(click_120_wav):
     buf = load(click_120_wav)
     a = analyze(buf); b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
-    plain = build(buf.samples, buf.samples, p,
+    # Use silence as B so the mixed region IS A * fo (no B contamination).
+    silent_b = np.zeros_like(buf.samples)
+    plain = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
-    swept = build(buf.samples, buf.samples, p,
+    swept = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="lowpass_sweep"), bpm_a=a.bpm)
-    region_start = p.a_start_sample
-    region_end = p.a_end_sample
-    plain_hf = np.abs(np.fft.rfft(plain[region_start:region_end, 0]))[len(plain[region_start:region_end, 0])//4:].sum()
-    swept_hf = np.abs(np.fft.rfft(swept[region_start:region_end, 0]))[len(swept[region_start:region_end, 0])//4:].sum()
+    region = slice(p.a_start_sample, p.a_end_sample)
+    plain_hf = np.abs(np.fft.rfft(plain[region, 0]))[len(plain[region, 0])//4:].sum()
+    swept_hf = np.abs(np.fft.rfft(swept[region, 0]))[len(swept[region, 0])//4:].sum()
     assert swept_hf < plain_hf * 0.5
 
 
@@ -46,9 +47,10 @@ def test_highpass_sweep_attenuates_lows(click_120_wav):
     buf = load(click_120_wav)
     a = analyze(buf); b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
-    plain = build(buf.samples, buf.samples, p,
+    silent_b = np.zeros_like(buf.samples)
+    plain = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
-    swept = build(buf.samples, buf.samples, p,
+    swept = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="highpass_sweep"), bpm_a=a.bpm)
     region = slice(p.a_start_sample, p.a_end_sample)
     plain_lf = np.abs(np.fft.rfft(plain[region, 0]))[:50].sum()
@@ -60,9 +62,10 @@ def test_echo_tail_produces_repeats(click_120_wav):
     buf = load(click_120_wav)
     a = analyze(buf); b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
-    plain = build(buf.samples, buf.samples, p,
+    silent_b = np.zeros_like(buf.samples)
+    plain = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
-    echoed = build(buf.samples, buf.samples, p,
+    echoed = build(buf.samples, silent_b, p,
                    TransitionOptions(type="crossfade", bars=4, effect="echo_tail"), bpm_a=a.bpm)
     region_len = p.a_end_sample - p.a_start_sample
     tail = slice(p.a_start_sample + region_len // 2, p.a_end_sample)
@@ -73,9 +76,10 @@ def test_reverb_wash_adds_energy(click_120_wav):
     buf = load(click_120_wav)
     a = analyze(buf); b = analyze(buf)
     p = plan(a, b, bars=4, a_buffer=buf.samples)
-    plain = build(buf.samples, buf.samples, p,
+    silent_b = np.zeros_like(buf.samples)
+    plain = build(buf.samples, silent_b, p,
                   TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
-    reverbed = build(buf.samples, buf.samples, p,
+    reverbed = build(buf.samples, silent_b, p,
                      TransitionOptions(type="crossfade", bars=4, effect="reverb_wash"), bpm_a=a.bpm)
     region = slice(p.a_start_sample, p.a_end_sample)
     assert np.sum(reverbed[region] ** 2) > np.sum(plain[region] ** 2) * 1.05
