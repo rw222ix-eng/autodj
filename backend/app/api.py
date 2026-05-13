@@ -1,8 +1,13 @@
 import uuid
 import shutil
+import sys
+import os
+import threading
+import webbrowser
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .audio_io import load, UnsupportedFormat
 from .analysis import analyze, InsufficientContent
@@ -15,6 +20,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _open_browser_when_ready():
+    # Only auto-open when running as a packaged exe, not during dev/tests.
+    if not getattr(sys, "frozen", False):
+        return
+    if os.environ.get("AUTODJ_NO_BROWSER"):
+        return
+
+    def _open():
+        import time
+        time.sleep(1.0)  # let uvicorn bind the port
+        webbrowser.open("http://localhost:8000")
+
+    threading.Thread(target=_open, daemon=True).start()
+
+
+_open_browser_when_ready()
 
 from datetime import datetime, timedelta
 
@@ -176,3 +199,20 @@ async def preview_endpoint(job_id: str):
     if not job or "paths" not in job:
         raise HTTPException(404)
     return FileResponse(job["paths"]["wav"], media_type="audio/wav")
+
+
+def _frontend_dist_path() -> Path | None:
+    # When packaged by PyInstaller, _MEIPASS is the extraction dir.
+    if getattr(sys, "frozen", False):
+        meipass = Path(sys._MEIPASS)
+        candidate = meipass / "frontend_dist"
+        if candidate.exists():
+            return candidate
+    # Dev: frontend/dist relative to project root
+    dev = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    return dev if dev.exists() else None
+
+
+_frontend_path = _frontend_dist_path()
+if _frontend_path:
+    app.mount("/", StaticFiles(directory=str(_frontend_path), html=True), name="frontend")

@@ -1,6 +1,8 @@
 import type { AnalyzeResponse, MixRequest, MixResponse } from "./types";
 
-const BASE = "http://localhost:8000";
+// Use same-origin in production builds (when served from the backend);
+// fall back to localhost:8000 in dev (Vite proxies aren't configured).
+const BASE = import.meta.env.PROD ? "" : "http://localhost:8000";
 
 export async function analyze(fileA: File, fileB: File): Promise<AnalyzeResponse> {
   const fd = new FormData();

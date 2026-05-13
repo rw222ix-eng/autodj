@@ -1,9 +1,26 @@
 from pathlib import Path
+import sys
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BACKEND_ROOT.parent
-WORKDIR = PROJECT_ROOT / "workdir"
-SAMPLES_DIR = PROJECT_ROOT / "samples"
+
+
+def _samples_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "samples"
+    return PROJECT_ROOT / "samples"
+
+
+def _workdir() -> Path:
+    if getattr(sys, "frozen", False):
+        # Use a stable user-writable location for jobs in bundled mode.
+        return Path.home() / ".autodj" / "workdir"
+    return PROJECT_ROOT / "workdir"
+
+
+WORKDIR = _workdir()
+SAMPLES_DIR = _samples_dir()
+WORKDIR.mkdir(parents=True, exist_ok=True)
 
 TARGET_SAMPLE_RATE = 44_100
 TARGET_CHANNELS = 2
