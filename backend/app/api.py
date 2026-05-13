@@ -16,6 +16,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from datetime import datetime, timedelta
+
+
+@app.on_event("startup")
+def _cleanup_workdir():
+    if not WORKDIR.exists():
+        return
+    cutoff = datetime.now() - timedelta(hours=24)
+    for child in WORKDIR.iterdir():
+        if not child.is_dir():
+            continue
+        if datetime.fromtimestamp(child.stat().st_mtime) < cutoff:
+            shutil.rmtree(child, ignore_errors=True)
+
+
 JOBS: dict[str, dict] = {}
 
 
