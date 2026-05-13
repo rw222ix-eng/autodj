@@ -81,3 +81,25 @@ def _ffmpeg_decode(path: Path) -> tuple[np.ndarray, int]:
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+def save_wav(buf: "AudioBuffer", path: Path) -> None:
+    path = Path(path)
+    sf.write(str(path), buf.samples, buf.sr, subtype="PCM_16")
+
+
+def save_mp3(buf: "AudioBuffer", path: Path, bitrate: str = "320k") -> None:
+    path = Path(path)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        sf.write(str(tmp_path), buf.samples, buf.sr, subtype="PCM_16")
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(tmp_path), "-b:a", bitrate, str(path)],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip().splitlines()[-1])
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()

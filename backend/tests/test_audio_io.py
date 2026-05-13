@@ -32,3 +32,26 @@ def test_load_raises_on_unsupported_format(tmp_path):
     bad.write_bytes(b"this is not audio")
     with pytest.raises(UnsupportedFormat):
         load(bad)
+
+
+import numpy as np
+from app.audio_io import save_wav, save_mp3, load
+
+
+def test_save_wav_roundtrip(tmp_path, click_120_wav):
+    buf = load(click_120_wav)
+    out = tmp_path / "out.wav"
+    save_wav(buf, out)
+    reloaded = load(out)
+    assert reloaded.sr == buf.sr
+    assert reloaded.samples.shape == buf.samples.shape
+
+
+def test_save_mp3_produces_decodable_file(tmp_path, click_120_wav):
+    buf = load(click_120_wav)
+    out = tmp_path / "out.mp3"
+    save_mp3(buf, out)
+    assert out.exists()
+    reloaded = load(out)
+    diff = abs(reloaded.samples.shape[0] - buf.samples.shape[0])
+    assert diff < 2205, f"length differs by {diff} samples"
