@@ -106,3 +106,25 @@ def a_minor_chord_wav() -> Path:
         sig = (sig * 0.3).astype(np.float32)
         sf.write(path, np.stack([sig, sig], 1), SR)
     return path
+
+
+@pytest.fixture(scope="session")
+def tone_120_wav() -> Path:
+    """30 s 120 BPM tone-burst track (440 Hz sine bursts) - different timbre from click_120,
+    same BPM, for cross-source alignment tests."""
+    path = FIXTURES / "tone_120.wav"
+    if not path.exists():
+        sr = SR
+        bpm = 120
+        duration_s = 30
+        n_samples = int(duration_s * sr)
+        samples_per_beat = int(sr * 60 / bpm)
+        burst_len = int(sr * 0.05)  # 50 ms tone burst per beat
+        t_burst = np.arange(burst_len) / sr
+        burst = (np.sin(2 * np.pi * 440 * t_burst) * np.hanning(burst_len)).astype(np.float32) * 0.6
+        audio = np.zeros((n_samples, 2), dtype=np.float32)
+        for i in range(0, n_samples - burst_len, samples_per_beat):
+            audio[i:i + burst_len, 0] += burst
+            audio[i:i + burst_len, 1] += burst
+        sf.write(path, audio, sr)
+    return path

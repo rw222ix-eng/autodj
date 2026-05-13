@@ -146,19 +146,71 @@ def test_missing_bridge_raises(tmp_path, click_120_wav, monkeypatch):
               bpm_a=a.bpm)
 
 
-def test_beat_grid_alignment_within_15ms(click_120_wav):
+def test_beat_grid_alignment_within_15ms(click_120_wav, tone_120_wav):
+    """Verifies §2.2 success criterion: in the rendered transition region, beats
+    contributed by A (click track) AND beats contributed by B (tone burst track)
+    both fall within ±15 ms of a shared 120 BPM grid.
+
+    Uses two DIFFERENT timbres at the same BPM so A-beats and B-beats can be
+    distinguished by cross-correlation against each source's onset-strength signal.
+    """
     import librosa
-    buf = load(click_120_wav)
-    a = analyze(buf)
-    b = analyze(buf)
-    p = plan(a, b, bars=4, a_buffer=buf.samples)
-    out = build(buf.samples, buf.samples, p,
-                TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
+    buf_a = load(click_120_wav)
+    buf_b = load(tone_120_wav)
+    a = analyze(buf_a)
+    b = analyze(buf_b)
+    p = plan(a, b, bars=4, a_buffer=buf_a.samples)
+    out = build(buf_a.samples, buf_b.samples, p,
+                TransitionOptions(type="crossfade", bars=4, effect="none"),
+                bpm_a=a.bpm)
+    sr = 44_100
     region = out[p.a_start_sample:p.a_end_sample, 0]
-    onset_env = librosa.onset.onset_strength(y=region, sr=44_100)
-    _, frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=44_100)
-    times = librosa.frames_to_time(frames, sr=44_100)
-    beat_period = 60 / a.bpm
+    region_mono = region.astype(np.float32)
+    # Source onset-strength signals (mono) of the same length as the region:
+    a_outro_mono = buf_a.samples[p.a_start_sample:p.a_end_sample, 0].astype(np.float32)
+    b_intro_mono = buf_b.samples[p.b_start_sample:p.b_end_sample, 0].astype(np.float32)
+    n = min(len(region_mono), len(a_outro_mono), len(b_intro_mono))
+    region_mono = region_mono[:n]
+    a_outro_mono = a_outro_mono[:n]
+    b_intro_mono = b_intro_mono[:n]
+
+    # Detect beats in the region and label each by whether it correlates more strongly
+    # with A's onset or B's onset in a small window around it.
+    onset_region = librosa.onset.onset_strength(y=region_mono, sr=sr)
+    _, frames = librosa.beat.beat_track(onset_envelope=onset_region, sr=sr)
+    times = librosa.frames_to_time(frames, sr=sr)
+
+    onset_a = librosa.onset.onset_strength(y=a_outro_mono, sr=sr)
+    onset_b = librosa.onset.onset_strength(y=b_intro_mono, sr=sr)
+    hop = 512  # librosa default for onset_strength
+
+    a_beats = []
+    b_beats = []
     for t in times:
-        nearest_grid = round(t / beat_period) * beat_period
-        assert abs(t - nearest_grid) < 0.015, f"beat at {t}s is {abs(t-nearest_grid)*1000:.1f}ms off grid"
+        frame = int(t * sr / hop)
+        if frame >= len(onset_a) or frame >= len(onset_b):
+            continue
+        # Compare which source had a stronger onset at this beat time
+        # (look at a small ±2-frame window for robustness).
+        lo = max(0, frame - 2)
+        hi = min(len(onset_a), frame + 3)
+        sa = float(onset_a[lo:hi].max())
+        sb = float(onset_b[lo:hi].max())
+        if sa > sb:
+            a_beats.append(t)
+        else:
+            b_beats.append(t)
+
+    # Both A and B should contribute at least one identifiable beat in a 4-bar region.
+    assert len(a_beats) >= 1, f"no A-beats identified; times={times}"
+    assert len(b_beats) >= 1, f"no B-beats identified; times={times}"
+
+    # Every beat (regardless of source) must fall within ±15 ms of the shared grid.
+    beat_period = 60 / a.bpm
+    for label, beats in (("A", a_beats), ("B", b_beats)):
+        for t in beats:
+            nearest = round(t / beat_period) * beat_period
+            offset_ms = abs(t - nearest) * 1000
+            assert offset_ms < 15, (
+                f"{label}-beat at {t:.3f}s is {offset_ms:.1f} ms off grid"
+            )
