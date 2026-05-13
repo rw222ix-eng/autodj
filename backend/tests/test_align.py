@@ -23,10 +23,13 @@ def test_close_bpm_stretches_outro(click_120_wav, click_128_wav):
     p = plan(a, b, bars=4, a_buffer=buf_a.samples)
     assert p.beat_match is True
     assert p.stretched_outro is not None
-    a_outro_samples = p.a_end_sample - p.a_start_sample
-    ratio = len(p.stretched_outro) / a_outro_samples
-    # 128/120 ≈ 1.0667 → stretched is ~6.7% shorter; ±trim slack
-    assert 0.85 < ratio < 1.05
+    # Pre-stretch expected outro: effective_bars * bar_seconds(a.bpm) * sr.
+    # Comparing against (a_end_sample - a_start_sample) is trivially ~1.0 because
+    # the implementation updates a_end_sample to match stretched_outro length.
+    expected_pre_stretch_samples = int(p.effective_bars * (60 / a.bpm * 4) * 44_100)
+    ratio = len(p.stretched_outro) / expected_pre_stretch_samples
+    # 128/120 ≈ 1.067 → stretched should be ~0.937 × pre-stretch length, ± trim slack
+    assert 0.85 < ratio < 1.00, f"stretch ratio {ratio:.3f} outside expected range"
 
 
 def test_far_bpm_skips_stretch(click_90_wav, click_174_wav):
