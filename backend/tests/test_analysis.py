@@ -30,3 +30,8 @@ def test_rms_envelope_and_windows(click_120_wav):
     assert 0 <= intro_start < intro_end <= f.duration_s
     assert 0 <= outro_start < outro_end <= f.duration_s
     assert intro_end <= outro_start
+
+
+def test_key_detection_a_minor(a_minor_chord_wav):
+    f = analyze(load(a_minor_chord_wav))
+    assert f.key.lower() in {"a minor", "c major"}

@@ -62,11 +62,13 @@ def analyze(buf: AudioBuffer) -> TrackFeatures:
     downbeats = _pick_downbeats(onset_env, sr, beat_times)
     rms_env = _rms_envelope(mono, sr)
     intro_w, outro_w = _intro_outro_windows(downbeats, bpm=bpm, duration_s=duration_s)
+    key = _detect_key(mono, sr)
     return TrackFeatures(
         bpm=bpm,
         bpm_confidence=confidence,
         beat_times=beat_times,
         downbeats=downbeats,
+        key=key,
         rms_envelope=rms_env,
         intro_window=intro_w,
         outro_window=outro_w,
@@ -144,3 +146,34 @@ def _intro_outro_windows(
     intro_end = intro_start + window_s
     outro_start = outro_end - window_s
     return (intro_start, intro_end), (outro_start, outro_end)
+
+
+_KRUMHANSL_MAJOR = np.array([
+    6.35, 2.23, 3.48, 2.33, 4.38, 4.09,
+    2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
+])
+_KRUMHANSL_MINOR = np.array([
+    6.33, 2.68, 3.52, 5.38, 2.60, 3.53,
+    2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
+])
+_PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _detect_key(mono: np.ndarray, sr: int) -> str:
+    chroma = librosa.feature.chroma_stft(y=mono, sr=sr).mean(axis=1)
+    if chroma.sum() == 0:
+        return ""
+    chroma = chroma / chroma.sum()
+    best_score = -np.inf
+    best_label = ""
+    for shift in range(12):
+        rotated = np.roll(chroma, -shift)
+        maj = float(np.corrcoef(rotated, _KRUMHANSL_MAJOR)[0, 1])
+        minr = float(np.corrcoef(rotated, _KRUMHANSL_MINOR)[0, 1])
+        if maj > best_score:
+            best_score = maj
+            best_label = f"{_PITCH_NAMES[shift]} major"
+        if minr > best_score:
+            best_score = minr
+            best_label = f"{_PITCH_NAMES[shift]} minor"
+    return best_label

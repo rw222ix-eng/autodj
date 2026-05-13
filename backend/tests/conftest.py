@@ -77,3 +77,17 @@ def click_120_flac(click_120_wav) -> Path:
 @pytest.fixture(scope="session")
 def click_120_m4a(click_120_wav) -> Path:
     return _convert(click_120_wav, FIXTURES / "click_120.m4a")
+
+
+@pytest.fixture(scope="session")
+def a_minor_chord_wav() -> Path:
+    """30 s sustained A minor chord (A3, C4, E4)."""
+    path = FIXTURES / "a_minor_chord.wav"
+    if not path.exists():
+        n = SR * 30
+        t = np.arange(n) / SR
+        freqs = [220.0, 261.63, 329.63]
+        sig = sum(np.sin(2 * np.pi * f * t) for f in freqs) / len(freqs)
+        sig = (sig * 0.3).astype(np.float32)
+        sf.write(path, np.stack([sig, sig], 1), SR)
+    return path
