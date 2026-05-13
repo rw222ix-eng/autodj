@@ -1,5 +1,6 @@
 # AutoDJ.spec
 # -*- mode: python ; coding: utf-8 -*-
+import platform
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 from pathlib import Path
 
@@ -45,7 +46,8 @@ samples_dir = project_root / "samples"
 if frontend_dist.exists():
     for f in frontend_dist.rglob("*"):
         if f.is_file():
-            datas.append((str(f), "frontend_dist/" + str(f.relative_to(frontend_dist).parent).replace("\\", "/")))
+            rel_parent = str(f.relative_to(frontend_dist).parent).replace("\\", "/")
+            datas.append((str(f), "frontend_dist/" + rel_parent))
 if samples_dir.exists():
     for f in samples_dir.glob("*.wav"):
         datas.append((str(f), "samples"))
@@ -83,3 +85,22 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+# On macOS, wrap the executable in a .app bundle so it's double-clickable.
+# PyInstaller ignores the BUNDLE directive on non-macOS platforms.
+if platform.system() == "Darwin":
+    app = BUNDLE(
+        exe,
+        name="AutoDJ.app",
+        icon=None,
+        bundle_identifier="com.autodj.app",
+        info_plist={
+            "CFBundleDisplayName": "AutoDJ",
+            "CFBundleName": "AutoDJ",
+            "CFBundleShortVersionString": "1.0.0",
+            "CFBundleVersion": "1.0.0",
+            "NSHighResolutionCapable": True,
+            "LSBackgroundOnly": False,
+            "LSMinimumSystemVersion": "11.0",
+        },
+    )
