@@ -135,3 +135,20 @@ def test_missing_bridge_raises(tmp_path, click_120_wav, monkeypatch):
         build(buf.samples, buf.samples, p,
               TransitionOptions(type="crossfade", bars=4, effect="none", bridge="drumroll"),
               bpm_a=a.bpm)
+
+
+def test_beat_grid_alignment_within_15ms(click_120_wav):
+    import librosa
+    buf = load(click_120_wav)
+    a = analyze(buf); b = analyze(buf)
+    p = plan(a, b, bars=4, a_buffer=buf.samples)
+    out = build(buf.samples, buf.samples, p,
+                TransitionOptions(type="crossfade", bars=4, effect="none"), bpm_a=a.bpm)
+    region = out[p.a_start_sample:p.a_end_sample, 0]
+    onset_env = librosa.onset.onset_strength(y=region, sr=44_100)
+    _, frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=44_100)
+    times = librosa.frames_to_time(frames, sr=44_100)
+    beat_period = 60 / a.bpm
+    for t in times:
+        nearest_grid = round(t / beat_period) * beat_period
+        assert abs(t - nearest_grid) < 0.015, f"beat at {t}s is {abs(t-nearest_grid)*1000:.1f}ms off grid"
