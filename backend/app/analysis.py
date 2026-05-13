@@ -61,6 +61,8 @@ def analyze(buf: AudioBuffer) -> TrackFeatures:
     confidence = _bpm_confidence(onset_env, sr, bpm)
     downbeats = _pick_downbeats(onset_env, sr, beat_times)
     rms_env = _rms_envelope(mono, sr)
+    if _max_silent_gap_s(rms_env, window_s=0.1) > 30:
+        raise InsufficientContent("silence gap longer than 30 s")
     intro_w, outro_w = _intro_outro_windows(downbeats, bpm=bpm, duration_s=duration_s)
     key = _detect_key(mono, sr)
     return TrackFeatures(
@@ -177,3 +179,14 @@ def _detect_key(mono: np.ndarray, sr: int) -> str:
             best_score = minr
             best_label = f"{_PITCH_NAMES[shift]} minor"
     return best_label
+
+
+def _max_silent_gap_s(rms_env: np.ndarray, window_s: float, threshold: float = 1e-4) -> float:
+    longest = current = 0
+    for v in rms_env:
+        if v < threshold:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest * window_s

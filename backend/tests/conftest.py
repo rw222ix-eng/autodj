@@ -80,6 +80,14 @@ def click_120_m4a(click_120_wav) -> Path:
 
 
 @pytest.fixture(scope="session")
+def silent_40s_wav() -> Path:
+    path = FIXTURES / "silent_40s.wav"
+    if not path.exists():
+        sf.write(path, np.zeros((SR * 40, 2), dtype=np.float32), SR)
+    return path
+
+
+@pytest.fixture(scope="session")
 def a_minor_chord_wav() -> Path:
     """30 s sustained A minor chord (A3, C4, E4)."""
     path = FIXTURES / "a_minor_chord.wav"
