@@ -60,11 +60,16 @@ def analyze(buf: AudioBuffer) -> TrackFeatures:
     bpm = _refine_bpm(mono, sr, bpm)
     confidence = _bpm_confidence(onset_env, sr, bpm)
     downbeats = _pick_downbeats(onset_env, sr, beat_times)
+    rms_env = _rms_envelope(mono, sr)
+    intro_w, outro_w = _intro_outro_windows(downbeats, bpm=bpm, duration_s=duration_s)
     return TrackFeatures(
         bpm=bpm,
         bpm_confidence=confidence,
         beat_times=beat_times,
         downbeats=downbeats,
+        rms_envelope=rms_env,
+        intro_window=intro_w,
+        outro_window=outro_w,
         duration_s=duration_s,
     )
 
@@ -109,3 +114,33 @@ def _pick_downbeats(onset_env: np.ndarray, sr: int, beat_times: np.ndarray) -> n
         strengths.append(onset_env[idx])
     first = int(np.argmax(strengths))
     return beat_times[first::4]
+
+
+def _rms_envelope(mono: np.ndarray, sr: int, window_s: float = 0.1) -> np.ndarray:
+    hop = int(sr * window_s)
+    if hop <= 0:
+        return np.zeros(0)
+    n = len(mono) // hop
+    out = np.empty(n, dtype=np.float32)
+    for i in range(n):
+        chunk = mono[i * hop:(i + 1) * hop]
+        out[i] = float(np.sqrt(np.mean(chunk ** 2)) if len(chunk) else 0.0)
+    return out
+
+
+def _intro_outro_windows(
+    downbeats: np.ndarray, bpm: float, duration_s: float, bars: int = 32
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    if len(downbeats) < 2:
+        return (0.0, duration_s / 2), (duration_s / 2, duration_s)
+    bar_s = 60 / bpm * 4
+    intro_start = float(downbeats[0])
+    outro_end = float(downbeats[-1])
+    # Desired window length, capped so intro and outro do not overlap.
+    span = outro_end - intro_start
+    if span <= 0:
+        return (0.0, duration_s / 2), (duration_s / 2, duration_s)
+    window_s = min(bars * bar_s, span / 2)
+    intro_end = intro_start + window_s
+    outro_start = outro_end - window_s
+    return (intro_start, intro_end), (outro_start, outro_end)

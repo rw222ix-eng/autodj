@@ -18,3 +18,15 @@ def test_bpm_detection_within_half_bpm(request, fixture, expected_bpm):
     )
     assert features.bpm_confidence >= 0.7
     assert len(features.beat_times) >= 25
+
+
+def test_rms_envelope_and_windows(click_120_wav):
+    buf = load(click_120_wav)
+    f = analyze(buf)
+    assert f.rms_envelope.ndim == 1
+    assert 270 <= len(f.rms_envelope) <= 330
+    intro_start, intro_end = f.intro_window
+    outro_start, outro_end = f.outro_window
+    assert 0 <= intro_start < intro_end <= f.duration_s
+    assert 0 <= outro_start < outro_end <= f.duration_s
+    assert intro_end <= outro_start
